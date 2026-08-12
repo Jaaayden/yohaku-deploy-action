@@ -149,6 +149,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
+      - name: Checkout deploy repository
+        uses: actions/checkout@v4
       # - name: Download artifact
       #   uses: actions/download-artifact@v4
       #   with:
@@ -165,8 +167,7 @@ jobs:
         run: mv assets/release.zip release.zip
 
       - name: Prepare standalone PM2 config
-        run: test -f ecosystem.config.js
-        # run: cp pm2/ecosystem.config.js ecosystem.config.js
+        run: cp pm2/ecosystem.config.js ecosystem.config.js
 
       - name: copy file via ssh password
         uses: appleboy/scp-action@v0.1.7
