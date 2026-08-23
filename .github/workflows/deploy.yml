@@ -95,6 +95,8 @@ jobs:
 
       - name: Checkout LFS objects
         run: git lfs checkout
+      - name: Materialize OSS workspace packages
+        run: sh scripts/materialize-oss-workspace-packages.sh
       - uses: pnpm/action-setup@v2
 
       - name: Use Node.js ${{ matrix.node-version }}
