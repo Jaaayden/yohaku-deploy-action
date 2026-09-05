@@ -29,6 +29,23 @@ const exit = new Promise(resolve => {
   child.once('exit', () => { exited = true; resolve() })
   child.once('error', error => { spawnError = error; exited = true; resolve() })
 })
+async function page(route, locale = 'zh') {
+  let url = new URL(route, 'http://127.0.0.1:19393')
+  const chain = []
+  for (let i = 0; i < 5; i++) {
+    const response = await fetch(url, {
+      redirect: 'manual', signal: AbortSignal.timeout(30000),
+      headers: { accept: 'text/html', 'accept-language': locale, cookie: `NEXT_LOCALE=${locale}` },
+    })
+    if (![301, 302, 303, 307, 308].includes(response.status)) return response
+    chain.push(`${response.status} ${url.pathname}${url.search}`)
+    const next = new URL(response.headers.get('location'), url)
+    assert.equal(next.origin, url.origin, 'Smoke redirect left the local server')
+    await response.arrayBuffer()
+    url = next
+  }
+  throw new Error(`Standalone redirect loop: ${chain.join(' -> ')}`)
+}
 try {
   let ready = false
   for (let i = 0; i < 60; i++) {
@@ -45,13 +62,13 @@ try {
   }
   assert.ok(ready, 'Standalone did not become ready')
   for (const locale of ['zh', 'en', 'ja', 'ko', 'zh-TW']) {
-    const res = await fetch(`http://127.0.0.1:19393/${locale}/friends`, { signal: AbortSignal.timeout(15000) })
+    const res = await page(locale === 'zh' ? '/friends' : `/${locale}/friends`, locale)
     assert.equal(res.status, 200, `${locale} friends page failed (HTTP ${res.status})`)
     const html = await res.text()
     assert.ok(!html.includes('RATE_LIMITED') && !html.includes('Build API upstream request failed'))
   }
   const before = api.stats.upstream
-  const response = await fetch('http://127.0.0.1:19393/zh/posts/__build_smoke__/missing', { signal: AbortSignal.timeout(30000) })
+  const response = await page('/posts/__build_smoke__/missing')
   await response.arrayBuffer()
   assert.ok([200, 404].includes(response.status), 'Dynamic missing-post route returned a server error')
   assert.ok(api.stats.upstream > before, 'Dynamic route did not use the new runtime API endpoint')

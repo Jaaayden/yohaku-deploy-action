@@ -65,12 +65,13 @@ jobs:
         id: use_content
         env:
           FILE_HASH: ${{ needs.prepare.outputs.hash_content }}
+          VALIDATE_ONLY: ${{ github.event_name == 'workflow_dispatch' && !inputs.deploy }}
         run: |
           file_hash=$FILE_HASH
           current_hash=$(git rev-parse --short HEAD)
           echo "File Hash: $file_hash"
           echo "Current Git Hash: $current_hash"
-          if [ "$file_hash" == "$current_hash" ]; then
+          if [ "$file_hash" == "$current_hash" ] && [ "$VALIDATE_ONLY" != "true" ]; then
             echo "Hashes match. Stopping workflow."
             echo "canceled=true" >> $GITHUB_OUTPUT
           else
