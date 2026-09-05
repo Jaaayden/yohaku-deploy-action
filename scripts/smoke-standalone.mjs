@@ -5,12 +5,14 @@ import { spawn } from 'node:child_process'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { createBuildProxy } from './build-api-proxy.mjs'
 
+// Use localhost consistently: NextURL normalizes 127.0.0.1 to localhost,
+// which otherwise turns middleware rewrites into external self-proxy requests.
 // Start the real release with a NEW runtime API endpoint. A request for a
 // nonexistent dynamic post proves the endpoint isn't frozen at build time.
 const api = await createBuildProxy({ upstream: process.env.NEXT_PUBLIC_API_URL })
 const child = spawn(process.execPath, ['server.js'], {
   cwd: path.resolve('apps/web/.next/standalone/apps/web'),
-  env: { ...process.env, NODE_ENV: 'production', HOSTNAME: '127.0.0.1', PORT: '19393', API_URL: api.url },
+  env: { ...process.env, NODE_ENV: 'production', HOSTNAME: 'localhost', PORT: '19393', API_URL: api.url },
   stdio: ['ignore', 'pipe', 'pipe'],
 })
 const errors = []
@@ -29,20 +31,18 @@ const exit = new Promise(resolve => {
   child.once('exit', () => { exited = true; resolve() })
   child.once('error', error => { spawnError = error; exited = true; resolve() })
 })
-const publicSite = new URL(process.env.BASE_URL)
 async function page(route, locale = 'zh') {
-  let url = new URL(route, 'http://127.0.0.1:19393')
+  let url = new URL(route, 'http://localhost:19393')
   const chain = []
   for (let i = 0; i < 5; i++) {
     const response = await fetch(url, {
       redirect: 'manual', signal: AbortSignal.timeout(30000),
-      headers: { accept: 'text/html', 'accept-language': locale, cookie: `NEXT_LOCALE=${locale}`,
-        host: publicSite.host, 'x-forwarded-host': publicSite.host, 'x-forwarded-proto': publicSite.protocol.slice(0, -1) },
+      headers: { accept: 'text/html', 'accept-language': locale, cookie: `NEXT_LOCALE=${locale}` },
     })
     if (![301, 302, 303, 307, 308].includes(response.status)) return response
     chain.push(`${response.status} ${url.pathname}${url.search}`)
     const next = new URL(response.headers.get('location'), url)
-    assert.ok([url.origin, publicSite.origin].includes(next.origin), 'Smoke redirect left the expected site')
+    assert.equal(next.origin, url.origin, 'Smoke redirect left the local server')
     await response.arrayBuffer()
     url = new URL(next.pathname + next.search, url.origin)
   }
@@ -53,7 +53,7 @@ try {
   for (let i = 0; i < 60; i++) {
     assert.ok(!exited && !spawnError, 'Standalone exited before becoming ready')
     ready = await new Promise(resolve => {
-      const socket = net.connect(19393, '127.0.0.1')
+      const socket = net.connect(19393, 'localhost')
       socket.setTimeout(500)
       socket.once('connect', () => { socket.destroy(); resolve(true) })
       socket.once('error', () => { socket.destroy(); resolve(false) })
