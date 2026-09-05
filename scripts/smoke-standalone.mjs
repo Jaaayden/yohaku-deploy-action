@@ -29,20 +29,22 @@ const exit = new Promise(resolve => {
   child.once('exit', () => { exited = true; resolve() })
   child.once('error', error => { spawnError = error; exited = true; resolve() })
 })
+const publicSite = new URL(process.env.BASE_URL)
 async function page(route, locale = 'zh') {
   let url = new URL(route, 'http://127.0.0.1:19393')
   const chain = []
   for (let i = 0; i < 5; i++) {
     const response = await fetch(url, {
       redirect: 'manual', signal: AbortSignal.timeout(30000),
-      headers: { accept: 'text/html', 'accept-language': locale, cookie: `NEXT_LOCALE=${locale}` },
+      headers: { accept: 'text/html', 'accept-language': locale, cookie: `NEXT_LOCALE=${locale}`,
+        host: publicSite.host, 'x-forwarded-host': publicSite.host, 'x-forwarded-proto': publicSite.protocol.slice(0, -1) },
     })
     if (![301, 302, 303, 307, 308].includes(response.status)) return response
     chain.push(`${response.status} ${url.pathname}${url.search}`)
     const next = new URL(response.headers.get('location'), url)
-    assert.equal(next.origin, url.origin, 'Smoke redirect left the local server')
+    assert.ok([url.origin, publicSite.origin].includes(next.origin), 'Smoke redirect left the expected site')
     await response.arrayBuffer()
-    url = next
+    url = new URL(next.pathname + next.search, url.origin)
   }
   throw new Error(`Standalone redirect loop: ${chain.join(' -> ')}`)
 }
@@ -74,6 +76,7 @@ try {
   assert.ok(api.stats.upstream > before, 'Dynamic route did not use the new runtime API endpoint')
   console.info('Standalone smoke passed: five locales and runtime API endpoint override')
 } finally {
+  console.info('Runtime API probe stats:', JSON.stringify(api.stats))
   if (errors.length) console.error('Standalone diagnostics:', errors.join('\n'))
   child.kill('SIGTERM')
   await Promise.race([exit, sleep(5000)])
