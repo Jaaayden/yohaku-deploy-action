@@ -138,3 +138,20 @@ git checkout bc07cfa
 pm2 startup
 pm2 save
 ```
+
+## 自动清理旧构建
+
+每次部署的 PM2 启动／重载和 `pm2 save` 成功后，工作流自动清理 `~/yohaku` 下的旧构建。默认总共保留 **5 个版本（包含当前版本）**：始终保留 `server.js` 当前指向的版本，再按运行编号从大到小保留最近 4 个其他版本。首次运行也会清理此前积累的旧目录；不足上限时不删除。
+
+在仓库 **Settings → Secrets and variables → Actions → Variables** 设置 `KEEP_RELEASES` 可调整上限，例如 `3`。未设置时默认 `5`；必须是不带前导零的正整数，非法值会在上传部署文件前导致校验失败。
+
+清理仅处理部署根目录下名称为纯数字的真实目录，不处理目录软链接、`.env`、共享 `.cache`、PM2 配置及其他非版本文件。数字目录中的失败或不完整构建也按编号计入保留数量。删除后的版本无法再通过 `rollback.sh` 回滚；共享缓存不受此数量限制。
+
+无法确认当前版本时不执行删除并报错。清理失败会使工作流失败、输出相关目录，但不会撤销已完成的部署。部署失败时不会运行清理。
+
+本地验证（仅在临时目录中测试，不连接服务器）：
+
+```bash
+bash -n scripts/cleanup-releases.sh
+node --test scripts/cleanup-releases.test.mjs
+```
