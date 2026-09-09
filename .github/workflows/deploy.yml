@@ -23,6 +23,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  KEEP_RELEASES: ${{ vars.KEEP_RELEASES || '5' }}
   HASH_FILE: build_hash
   SOURCE_REPO: innei-dev/Yohaku
   BUILD_COMMAND: pnpm --filter @yohaku/web build:ci
@@ -168,6 +169,11 @@ jobs:
     steps:
       - name: Checkout deploy repository
         uses: actions/checkout@v4
+      - name: Validate and test release cleanup
+        run: |
+          bash scripts/cleanup-releases.sh --validate "$KEEP_RELEASES"
+          bash -n scripts/cleanup-releases.sh
+          node --test scripts/cleanup-releases.test.mjs
       # - name: Download artifact
       #   uses: actions/download-artifact@v4
       #   with:
@@ -184,7 +190,9 @@ jobs:
         run: mv assets/release.zip release.zip
 
       - name: Prepare standalone PM2 config
-        run: cp pm2/ecosystem.config.js ecosystem.config.js
+        run: |
+          cp pm2/ecosystem.config.js ecosystem.config.js
+          cp scripts/cleanup-releases.sh cleanup-releases.sh
 
       - name: copy file via ssh password
         uses: appleboy/scp-action@v0.1.7
@@ -197,7 +205,7 @@ jobs:
           source: 'release.zip'
           target: '/tmp/yohaku'
 
-      - name: copy PM2 config via ssh password
+      - name: Copy PM2 config and release cleanup script
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.HOST }}
@@ -205,13 +213,14 @@ jobs:
           password: ${{ secrets.PASSWORD }}
           key: ${{ secrets.KEY }}
           port: ${{ secrets.PORT }}
-          source: 'ecosystem.config.js'
+          source: 'ecosystem.config.js,cleanup-releases.sh'
           target: '/tmp/yohaku'
 
       - name: Exec deploy script with SSH
         uses: appleboy/ssh-action@master
 
         with:
+          envs: KEEP_RELEASES
           command_timeout: 5m
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USER }}
@@ -221,12 +230,14 @@ jobs:
           script: |
             set -e
             source $HOME/.bashrc
+            bash /tmp/yohaku/cleanup-releases.sh --validate "$KEEP_RELEASES"
             basedir=$HOME/yohaku
             workdir=$basedir/${{ github.run_number }}
             mkdir -p $workdir
             mkdir -p $basedir/.cache
             mv /tmp/yohaku/release.zip $workdir/release.zip
             install -m 644 /tmp/yohaku/ecosystem.config.js $basedir/ecosystem.config.js
+            install -m 644 /tmp/yohaku/cleanup-releases.sh "$basedir/cleanup-releases.sh"
             cd $workdir
             unzip -qq -o $workdir/release.zip
             rm -r /tmp/yohaku
@@ -247,6 +258,7 @@ jobs:
             fi
             rm $workdir/release.zip
             pm2 save
+            bash "$basedir/cleanup-releases.sh" "$basedir" "$KEEP_RELEASES"
             echo "Deployed successfully"
 
       - name: After deploy script
