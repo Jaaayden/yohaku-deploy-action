@@ -109,8 +109,8 @@ jobs:
 
       - name: Checkout LFS objects
         run: git lfs checkout
-      - name: Materialize OSS workspace packages
-        run: sh scripts/materialize-oss-workspace-packages.sh
+      # pnpm 12's lockfile uses real yohaku-oss workspace paths. Keep the
+      # checkout symlinks; upstream postinstall handles links for Next.js.
       - uses: pnpm/action-setup@v2
 
       - name: Use Node.js ${{ matrix.node-version }}
@@ -120,7 +120,7 @@ jobs:
           cache: 'pnpm'
       - uses: jongwooo/next-cache@v1
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
       - name: Build project
         env:
           BASE_URL: ${{ secrets.BASE_URL }}
